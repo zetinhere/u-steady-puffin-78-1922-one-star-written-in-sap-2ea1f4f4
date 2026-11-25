@@ -56,9 +56,72 @@ FINAL_LINE = (
 
 MAX_CHARS = 279
 
+# Recorded totals from the 14-candidate scoring table in the docstring
+# (each candidate scored 1-5 on the judge's five criteria, in order).
+CANDIDATE_TOTALS = {
+    "R1": 25.0, "R3": 24.5, "R4": 24.5, "R2": 23.5, "R5": 23.0,
+    "R8": 23.0, "R6": 22.5, "R12": 22.5, "R14": 22.0, "R7": 21.5,
+    "R9": 21.0, "R10": 21.0, "R11": 21.0, "R13": 20.0,
+}
+
+# Stock phrases the brief rules out (criterion 5: freshness).
+BANNED_PHRASES = ("drama queen", "dramatic wilting", "ignored")
+
+# Plant-domain tokens that mark the plant's own voice (criterion 3).
+PLANT_VOICE_WORDS = (
+    "photosynthesize", "water", "soil", "pot", "light", "dark",
+    "leaf", "root", "repotted",
+)
+
+
+def select_winner(totals):
+    """Deterministic argmax over the scoring table.
+
+    Highest total wins; ties break by candidate name, so the result is
+    stable no matter the dict order. R1 (25.0) is the unique maximum.
+    """
+    return sorted(totals, key=lambda name: (-totals[name], name))[0]
+
+
+def verify_line(line):
+    """Check the line against the brief's own criteria before writing.
+
+    Returns a list of violations (empty means the line passes):
+    criterion 5 -- no banned stock phrases; criterion 3 -- at least one
+    plant-voice word; criterion 4 -- a genuine 1-star review shape
+    ("One star" marker, ends with a full stop, 100-279 chars so the
+    grievance has room but stays one short line).
+    """
+    problems = []
+    lowered = line.lower()
+    for phrase in BANNED_PHRASES:
+        if phrase in lowered:
+            problems.append(f"banned stock phrase: {phrase!r}")
+    if not any(word in lowered for word in PLANT_VOICE_WORDS):
+        problems.append("no plant-voice word found")
+    if "one star" not in lowered:
+        problems.append("no 'One star' marker (not a 1-star review)")
+    if not line.endswith("."):
+        problems.append("line does not end with a full stop")
+    if not 100 <= len(line) <= MAX_CHARS:
+        problems.append(f"length {len(line)} outside 100-{MAX_CHARS} chars")
+    return problems
+
 
 def main() -> int:
     line = FINAL_LINE
+
+    # The winner must be the scoring table's argmax, and the line itself
+    # must pass the brief's own checks; fail loudly instead of writing a
+    # line that no longer matches the recorded scoring.
+    if select_winner(CANDIDATE_TOTALS) != "R1":
+        print("error: scoring table no longer selects R1", file=sys.stderr)
+        return 1
+    problems = verify_line(line)
+    if problems:
+        for problem in problems:
+            print(f"error: {problem}", file=sys.stderr)
+        return 1
 
     # Gate self-check: the sealed scorer requires UTF-8 text of
     # 1 to 279 characters, not only white space.
